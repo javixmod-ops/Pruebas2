@@ -1,93 +1,97 @@
--- Twin GG XPT — archivo combinado de referencia
--- Contiene ambas ramas completas: servidor y cliente.
--- IMPORTANTE: Roblox exige colocar la rama SERVIDOR como Script en ServerScriptService
--- y la rama CLIENTE como LocalScript en StarterPlayerScripts.
+-- Twin GG XPT — archivo único con selección automática de contexto
+-- Coloca una copia de este mismo archivo como Script en ServerScriptService
+-- y otra copia como LocalScript en StarterPlayerScripts.
+-- En cada contexto se ejecuta únicamente la rama correspondiente.
 
+local __TGX_RunService = game:GetService("RunService")
+
+if __TGX_RunService:IsServer() then
 -- ==================== INICIO RAMA SERVIDOR ====================
--- Twin GG XPT — validación de claves en servidor
--- Coloca este archivo como Script dentro de ServerScriptService.
--- Requisitos: Game Settings > Security > Enable HTTP Requests.
-
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local VALIDATION_URL = "https://fxhaajxvi-bhwzrpe4.manus.space/api/roblox/validate"
-local REMOTE_NAME = "TGX_KeyValidation"
-local REQUEST_TIMEOUT = 8
-
-local remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME)
-if not remote then
-	remote = Instance.new("RemoteFunction")
-	remote.Name = REMOTE_NAME
-	remote.Parent = ReplicatedStorage
-end
-
-local activeKeys = {}
-
-local function validateKey(player, rawKey)
-	if typeof(rawKey) ~= "string" then
-		return false, "La clave no es válida.", nil
+	-- Twin GG XPT — validación de claves en servidor
+	-- Coloca este archivo como Script dentro de ServerScriptService.
+	-- Requisitos: Game Settings > Security > Enable HTTP Requests.
+	
+	local HttpService = game:GetService("HttpService")
+	local Players = game:GetService("Players")
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	
+	local VALIDATION_URL = "https://fxhaajxvi-bhwzrpe4.manus.space/api/roblox/validate"
+	local REMOTE_NAME = "TGX_KeyValidation"
+	local REQUEST_TIMEOUT = 8
+	
+	local remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME)
+	if not remote then
+		remote = Instance.new("RemoteFunction")
+		remote.Name = REMOTE_NAME
+		remote.Parent = ReplicatedStorage
 	end
-
-	local key = rawKey:match("^%s*(.-)%s*$")
-	if #key < 8 or #key > 128 then
-		return false, "La clave no es válida.", nil
+	
+	local activeKeys = {}
+	
+	local function validateKey(player, rawKey)
+		if typeof(rawKey) ~= "string" then
+			return false, "La clave no es válida.", nil
+		end
+	
+		local key = rawKey:match("^%s*(.-)%s*$")
+		if #key < 8 or #key > 128 then
+			return false, "La clave no es válida.", nil
+		end
+	
+		local ok, response = pcall(function()
+			return HttpService:RequestAsync({
+				Url = VALIDATION_URL,
+				Method = "POST",
+				Headers = { ["Content-Type"] = "application/json" },
+				Body = HttpService:JSONEncode({
+					token = key,
+					robloxUserId = tostring(player.UserId),
+				}),
+			})
+		end)
+	
+		if not ok or not response.Success then
+			return false, "No se pudo contactar al servidor de claves.", nil
+		end
+	
+		local decodedOk, data = pcall(function()
+			return HttpService:JSONDecode(response.Body)
+		end)
+		if not decodedOk or typeof(data) ~= "table" then
+			return false, "Respuesta inválida del servidor de claves.", nil
+		end
+	
+		if data.valid ~= true then
+			return false, "Clave expirada, revocada o incorrecta.", nil
+		end
+	
+		activeKeys[player.UserId] = {
+			expiresAt = data.expiresAt,
+			validatedAt = os.time(),
+		}
+		return true, "Clave aprobada.", data.expiresAt
 	end
-
-	local ok, response = pcall(function()
-		return HttpService:RequestAsync({
-			Url = VALIDATION_URL,
-			Method = "POST",
-			Headers = { ["Content-Type"] = "application/json" },
-			Body = HttpService:JSONEncode({
-				token = key,
-				robloxUserId = tostring(player.UserId),
-			}),
-		})
+	
+	remote.OnServerInvoke = function(player, rawKey)
+		return validateKey(player, rawKey)
+	end
+	
+	Players.PlayerRemoving:Connect(function(player)
+		activeKeys[player.UserId] = nil
 	end)
-
-	if not ok or not response.Success then
-		return false, "No se pudo contactar al servidor de claves.", nil
+	
+	-- Otros scripts del juego pueden consultar este estado sin confiar en el cliente.
+	_G.TGXKeyIsActive = function(player)
+		local state = activeKeys[player.UserId]
+		if not state or (os.time() - state.validatedAt) >= 300 then return false end
+		local parsedOk, expiresAt = pcall(function()
+			return DateTime.fromIsoDate(state.expiresAt).UnixTimestamp
+		end)
+		return parsedOk and os.time() < expiresAt
 	end
-
-	local decodedOk, data = pcall(function()
-		return HttpService:JSONDecode(response.Body)
-	end)
-	if not decodedOk or typeof(data) ~= "table" then
-		return false, "Respuesta inválida del servidor de claves.", nil
-	end
-
-	if data.valid ~= true then
-		return false, "Clave expirada, revocada o incorrecta.", nil
-	end
-
-	activeKeys[player.UserId] = {
-		expiresAt = data.expiresAt,
-		validatedAt = os.time(),
-	}
-	return true, "Clave aprobada.", data.expiresAt
-end
-
-remote.OnServerInvoke = function(player, rawKey)
-	return validateKey(player, rawKey)
-end
-
-Players.PlayerRemoving:Connect(function(player)
-	activeKeys[player.UserId] = nil
-end)
-
--- Otros scripts del juego pueden consultar este estado sin confiar en el cliente.
-_G.TGXKeyIsActive = function(player)
-	local state = activeKeys[player.UserId]
-	if not state or (os.time() - state.validatedAt) >= 300 then return false end
-	local parsedOk, expiresAt = pcall(function()
-		return DateTime.fromIsoDate(state.expiresAt).UnixTimestamp
-	end)
-	return parsedOk and os.time() < expiresAt
-end
-
 -- ===================== FIN RAMA SERVIDOR =====================
+return
+end
 
 -- ===================== INICIO RAMA CLIENTE ====================
 -- TWIN GG XPT · LOCAL SOLO · HITBOX INTEGRADA
@@ -1822,3 +1826,4 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ====================== FIN RAMA CLIENTE =====================
+
