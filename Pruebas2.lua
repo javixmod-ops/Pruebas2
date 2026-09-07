@@ -1,99 +1,3 @@
--- Twin GG XPT — archivo único con selección automática de contexto
--- Coloca una copia de este mismo archivo como Script en ServerScriptService
--- y otra copia como LocalScript en StarterPlayerScripts.
--- En cada contexto se ejecuta únicamente la rama correspondiente.
-
-local __TGX_RunService = game:GetService("RunService")
-
-if __TGX_RunService:IsServer() then
--- ==================== INICIO RAMA SERVIDOR ====================
-	-- Twin GG XPT — validación de claves en servidor
-	-- Coloca este archivo como Script dentro de ServerScriptService.
-	-- Requisitos: Game Settings > Security > Enable HTTP Requests.
-	
-	local HttpService = game:GetService("HttpService")
-	local Players = game:GetService("Players")
-	local ReplicatedStorage = game:GetService("ReplicatedStorage")
-	
-	local VALIDATION_URL = "https://fxhaajxvi-bhwzrpe4.manus.space/api/roblox/validate"
-	local REMOTE_NAME = "TGX_KeyValidation"
-	local REQUEST_TIMEOUT = 8
-	
-	local remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME)
-	if not remote then
-		remote = Instance.new("RemoteFunction")
-		remote.Name = REMOTE_NAME
-		remote.Parent = ReplicatedStorage
-	end
-	
-	local activeKeys = {}
-	
-	local function validateKey(player, rawKey)
-		if typeof(rawKey) ~= "string" then
-			return false, "La clave no es válida.", nil
-		end
-	
-		local key = rawKey:match("^%s*(.-)%s*$")
-		if #key < 8 or #key > 128 then
-			return false, "La clave no es válida.", nil
-		end
-	
-		local ok, response = pcall(function()
-			return HttpService:RequestAsync({
-				Url = VALIDATION_URL,
-				Method = "POST",
-				Headers = { ["Content-Type"] = "application/json" },
-				Body = HttpService:JSONEncode({
-					token = key,
-					robloxUserId = tostring(player.UserId),
-				}),
-			})
-		end)
-	
-		if not ok or not response.Success then
-			return false, "No se pudo contactar al servidor de claves.", nil
-		end
-	
-		local decodedOk, data = pcall(function()
-			return HttpService:JSONDecode(response.Body)
-		end)
-		if not decodedOk or typeof(data) ~= "table" then
-			return false, "Respuesta inválida del servidor de claves.", nil
-		end
-	
-		if data.valid ~= true then
-			return false, "Clave expirada, revocada o incorrecta.", nil
-		end
-	
-		activeKeys[player.UserId] = {
-			expiresAt = data.expiresAt,
-			validatedAt = os.time(),
-		}
-		return true, "Clave aprobada.", data.expiresAt
-	end
-	
-	remote.OnServerInvoke = function(player, rawKey)
-		return validateKey(player, rawKey)
-	end
-	
-	Players.PlayerRemoving:Connect(function(player)
-		activeKeys[player.UserId] = nil
-	end)
-	
-	-- Otros scripts del juego pueden consultar este estado sin confiar en el cliente.
-	_G.TGXKeyIsActive = function(player)
-		local state = activeKeys[player.UserId]
-		if not state or (os.time() - state.validatedAt) >= 300 then return false end
-		local parsedOk, expiresAt = pcall(function()
-			return DateTime.fromIsoDate(state.expiresAt).UnixTimestamp
-		end)
-		return parsedOk and os.time() < expiresAt
-	end
--- ===================== FIN RAMA SERVIDOR =====================
-return
-end
-
--- ===================== INICIO RAMA CLIENTE ====================
 -- TWIN GG XPT · LOCAL SOLO · HITBOX INTEGRADA
 -- Colócalo en StarterPlayer > StarterPlayerScripts.
 -- Diseñado como mecánica de tu propio shooter. No modifica impactos ni contiene Silent Aimbot.
@@ -148,7 +52,6 @@ local state = {
 	playerJump = 50,
 	noclip = false,
 	antiLag = false,
-	keyAuthorized = false,
 }
 
 -- Variables del expansor LocalScript aportado. La pestaña HITBOX las controla directamente.
@@ -1514,7 +1417,6 @@ local function targetCanReceiveAssist(camera, targetPlayer)
 end
 
 local function updateFrame(deltaTime)
-	if not state.keyAuthorized then return end
 	applyPlayerMovement()
 	if state.noclip then applyNoclip() end
 	fpsFrames = fpsFrames + 1
@@ -1660,130 +1562,8 @@ end)
 
 refreshPage()
 
--- KEY SYSTEM integrado en este mismo LocalScript original.
--- La clave se valida en servidor mediante RemoteFunction; el cliente nunca llama al portal directamente.
-local OPEN_PORTAL_URL = "https://fxhaajxvi-bhwzrpe4.manus.space/"
-local KEY_REMOTE_NAME = "TGX_KeyValidation"
-local keyOverlay = create("Frame", {
-	Active = true,
-	BackgroundColor3 = Color3.fromRGB(3, 11, 28),
-	BackgroundTransparency = 0.02,
-	BorderSizePixel = 0,
-	Size = UDim2.fromScale(1, 1),
-	Visible = true,
-	ZIndex = 300,
-}, gui)
-local keyCard = create("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	BackgroundColor3 = SURFACE,
-	BorderSizePixel = 0,
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(360, 238),
-	ZIndex = 301,
-}, keyOverlay)
-corner(keyCard, 18)
-stroke(keyCard, ACCENT, 1.4, 0.16)
-gradient(keyCard, Color3.fromRGB(19, 35, 57), Color3.fromRGB(8, 14, 25), 115)
-label(keyCard, "KEY SYSTEM JXVI MODS", UDim2.fromOffset(24, 22), UDim2.new(1, -48, 0, 28), Enum.Font.GothamBlack, WHITE, 17)
-label(keyCard, "Introduce una clave para desbloquear Twin GG XPT.", UDim2.fromOffset(24, 53), UDim2.new(1, -48, 0, 20), Enum.Font.Gotham, MUTED, 10)
-local keyInput = create("TextBox", {
-	BackgroundColor3 = Color3.fromRGB(8, 18, 31),
-	BorderSizePixel = 0,
-	ClearTextOnFocus = false,
-	Font = Enum.Font.RobotoMono,
-	PlaceholderColor3 = Color3.fromRGB(95, 124, 150),
-	PlaceholderText = "JXVI-GG-...",
-	Position = UDim2.fromOffset(24, 91),
-	Size = UDim2.new(1, -48, 0, 39),
-	Text = "",
-	TextColor3 = WHITE,
-	TextSize = 12,
-	ZIndex = 302,
-}, keyCard)
-corner(keyInput, 8)
-stroke(keyInput, Color3.fromRGB(78, 139, 181), 1, 0.45)
-local keyMessage = label(keyCard, "Esperando una clave.", UDim2.fromOffset(24, 136), UDim2.new(1, -48, 0, 18), Enum.Font.RobotoMono, MUTED, 8)
-local keyApprove = create("TextButton", {
-	AutoButtonColor = false,
-	BackgroundColor3 = ACCENT,
-	BorderSizePixel = 0,
-	Font = Enum.Font.GothamBold,
-	Position = UDim2.fromOffset(24, 169),
-	Size = UDim2.fromOffset(151, 35),
-	Text = "APROBAR CLAVE",
-	TextColor3 = Color3.fromRGB(5, 17, 28),
-	TextSize = 10,
-	ZIndex = 302,
-}, keyCard)
-corner(keyApprove, 8)
-local keyGet = create("TextButton", {
-	AutoButtonColor = false,
-	BackgroundColor3 = SURFACE_2,
-	BorderSizePixel = 0,
-	Font = Enum.Font.GothamBold,
-	Position = UDim2.fromOffset(185, 169),
-	Size = UDim2.fromOffset(151, 35),
-	Text = "OBTENER CLAVE",
-	TextColor3 = WHITE,
-	TextSize = 10,
-	ZIndex = 302,
-}, keyCard)
-corner(keyGet, 8)
-stroke(keyGet, Color3.fromRGB(104, 158, 194), 1, 0.48)
 
-local function setKeyMessage(text, color)
-	keyMessage.Text = text
-	keyMessage.TextColor3 = color or MUTED
-end
-
-keyGet.Activated:Connect(function()
-	local opened = pcall(function()
-		GuiService:OpenBrowserWindow(OPEN_PORTAL_URL)
-	end)
-	setKeyMessage(opened and "Portal abierto en el navegador." or "Abre el portal desde Chrome.", opened and ACCENT or RED)
-end)
-
-keyApprove.Activated:Connect(function()
-	if keyApprove.Active == false then return end
-	local input = string.gsub(keyInput.Text or "", "^%s*(.-)%s*$", "%1")
-	if #input < 8 then
-		setKeyMessage("Introduce una clave válida.", RED)
-		return
-	end
-	keyApprove.Active = false
-	keyApprove.Text = "VERIFICANDO..."
-	setKeyMessage("Contactando al servidor seguro...", ACCENT)
-	task.spawn(function()
-		local remote = ReplicatedStorage:FindFirstChild(KEY_REMOTE_NAME) or ReplicatedStorage:WaitForChild(KEY_REMOTE_NAME, 10)
-		if not remote or not remote:IsA("RemoteFunction") then
-			keyApprove.Active = true
-			keyApprove.Text = "APROBAR CLAVE"
-			setKeyMessage("Falta el Script de validación en ServerScriptService.", RED)
-			return
-		end
-		local ok, approved, message = pcall(function()
-			return remote:InvokeServer(input)
-		end)
-		if not ok or approved ~= true then
-			keyApprove.Active = true
-			keyApprove.Text = "APROBAR CLAVE"
-			setKeyMessage((ok and message) or "No se pudo validar la clave.", RED)
-			return
-		end
-		state.keyAuthorized = true
-		setKeyMessage(message or "Clave aprobada.", GREEN)
-		task.wait(0.35)
-		keyOverlay.Visible = false
-		root.Visible = true
-		hud.Visible = true
-		setKeyMessage("Clave aprobada.", GREEN)
-	end)
-end)
-
--- El panel original permanece intacto, pero no se muestra hasta que el servidor autoriza la clave.
-root.Visible = false
-hud.Visible = false
-minimizedButton.Visible = false
+-- Inicio directo de Twin GG XPT, sin pantalla ni validación de key.
 gui.Enabled = true
 
 -- Bucle principal del expansor de Hitbox aportado por el usuario.
@@ -1801,7 +1581,7 @@ restoreLocalHitboxExpander = function()
 end
 
 RunService.RenderStepped:Connect(function()
-	if not state.keyAuthorized or not isHitboxActive then return end
+	if not isHitboxActive then return end
 
 	for _, player in pairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
@@ -1824,19 +1604,12 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 end)
-
--- ====================== FIN RAMA CLIENTE =====================
--- Twin GG XPT — validación de claves en servidor
--- Coloca este archivo como Script dentro de ServerScriptService.
--- Requisitos: Game Settings > Security > Enable HTTP Requests.
-
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local VALIDATION_URL = "https://fxhaajxvi-bhwzrpe4.manus.space/api/roblox/validate"
 local REMOTE_NAME = "TGX_KeyValidation"
-local REQUEST_TIMEOUT = 8
 
 local remote = ReplicatedStorage:FindFirstChild(REMOTE_NAME)
 if not remote then
@@ -1845,19 +1618,14 @@ if not remote then
 	remote.Parent = ReplicatedStorage
 end
 
-local activeKeys = {}
-
-local function validateKey(player, rawKey)
-	if typeof(rawKey) ~= "string" then
-		return false, "La clave no es válida.", nil
+remote.OnServerInvoke = function(player, rawKey)
+	if typeof(rawKey) ~= "string" or #rawKey < 4 then
+		return false, "Formato de clave no válido."
 	end
 
 	local key = rawKey:match("^%s*(.-)%s*$")
-	if #key < 8 or #key > 128 then
-		return false, "La clave no es válida.", nil
-	end
 
-	local ok, response = pcall(function()
+	local success, response = pcall(function()
 		return HttpService:RequestAsync({
 			Url = VALIDATION_URL,
 			Method = "POST",
@@ -1869,42 +1637,72 @@ local function validateKey(player, rawKey)
 		})
 	end)
 
-	if not ok or not response.Success then
-		return false, "No se pudo contactar al servidor de claves.", nil
+	if not success or not response.Success then
+		return false, "Error de conexión con el servidor de claves."
 	end
 
 	local decodedOk, data = pcall(function()
 		return HttpService:JSONDecode(response.Body)
 	end)
-	if not decodedOk or typeof(data) ~= "table" then
-		return false, "Respuesta inválida del servidor de claves.", nil
+
+	if decodedOk and data and data.valid == true then
+		return true, "Clave verificada."
+	else
+		return false, "Clave incorrecta o expirada."
 	end
+end
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-	if data.valid ~= true then
-		return false, "Clave expirada, revocada o incorrecta.", nil
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local REMOTE_NAME = "TGX_KeyValidation"
+
+local remote = ReplicatedStorage:WaitForChild(REMOTE_NAME)
+
+-- Interfaz de la Clave
+local keyGui = Instance.new("ScreenGui")
+keyGui.Name = "TGX_KeyGui"
+keyGui.Parent = PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 300, 0, 160)
+frame.Position = UDim2.new(0.5, -150, 0.5, -80)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+frame.Parent = keyGui
+
+local input = Instance.new("TextBox")
+input.Size = UDim2.new(0.8, 0, 0, 35)
+input.Position = UDim2.new(0.1, 0, 0.2, 0)
+input.PlaceholderText = "Ingresa tu clave..."
+input.Parent = frame
+
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0.8, 0, 0, 35)
+button.Position = UDim2.new(0.1, 0, 0.5, 0)
+button.Text = "Validar"
+button.BackgroundColor3 = Color3.fromRGB(0, 150, 90)
+button.Parent = frame
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, 0, 0, 25)
+status.Position = UDim2.new(0, 0, 0.78, 0)
+status.BackgroundTransparency = 1
+status.TextColor3 = Color3.fromRGB(255, 255, 255)
+status.Text = ""
+status.Parent = frame
+
+button.MouseButton1Click:Connect(function()
+	if input.Text == "" then return end
+	status.Text = "Verificando..."
+	
+	local isValid, msg = remote:InvokeServer(input.Text)
+	status.Text = msg
+	
+	if isValid then
+		task.wait(1)
+		keyGui:Destroy()
+		-- Aquí se ejecuta la apertura de la interfaz principal de tu juego
 	end
-
-	activeKeys[player.UserId] = {
-		expiresAt = data.expiresAt,
-		validatedAt = os.time(),
-	}
-	return true, "Clave aprobada.", data.expiresAt
-end
-
-remote.OnServerInvoke = function(player, rawKey)
-	return validateKey(player, rawKey)
-end
-
-Players.PlayerRemoving:Connect(function(player)
-	activeKeys[player.UserId] = nil
 end)
 
--- Otros scripts del juego pueden consultar este estado sin confiar en el cliente.
-_G.TGXKeyIsActive = function(player)
-	local state = activeKeys[player.UserId]
-	if not state or (os.time() - state.validatedAt) >= 300 then return false end
-	local parsedOk, expiresAt = pcall(function()
-		return DateTime.fromIsoDate(state.expiresAt).UnixTimestamp
-	end)
-	return parsedOk and os.time() < expiresAt
-end
